@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { BookOpen, Sparkles, Trophy } from 'lucide-react'
 
 const readingTexts = [
   {
@@ -46,8 +47,8 @@ export default function Home() {
             className="bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 p-8 hover:scale-105 border-4 border-transparent hover:border-purple-400"
           >
             <div className="mb-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-blue-400 rounded-full flex items-center justify-center text-white text-3xl mb-4">
-                📚
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-blue-400 rounded-full flex items-center justify-center text-white mb-4">
+                <BookOpen className="w-8 h-8" />
               </div>
               <h2 className="text-3xl font-bold text-gray-800 mb-2">
                 {text.title}

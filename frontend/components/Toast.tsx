@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Check, PartyPopper, Star } from 'lucide-react'
 
 export interface ToastMessage {
   id: string
@@ -52,7 +53,18 @@ function ToastItem({ toast, onRemove }: { toast: ToastMessage; onRemove: (id: st
     }
   }
 
-  const icon = toast.icon || (toast.type === 'success' ? '✓' : toast.type === 'celebration' ? '🎉' : '⭐')
+  const getIcon = () => {
+    switch (toast.type) {
+      case 'success':
+        return <Check className="w-8 h-8" />
+      case 'celebration':
+        return <PartyPopper className="w-8 h-8" />
+      case 'encouragement':
+        return <Star className="w-8 h-8" />
+      default:
+        return <Star className="w-8 h-8" />
+    }
+  }
 
   return (
     <div
@@ -61,7 +73,7 @@ function ToastItem({ toast, onRemove }: { toast: ToastMessage; onRemove: (id: st
       }`}
       style={{ animation: isExiting ? 'none' : 'slideInRight 0.4s ease-out' }}
     >
-      <div className="text-3xl flex-shrink-0">{icon}</div>
+      <div className="flex-shrink-0">{getIcon()}</div>
       <div className="flex-1">
         <p className="text-lg font-semibold">{toast.message}</p>
       </div>
@@ -95,8 +107,8 @@ export function useToast() {
     toasts,
     addToast,
     removeToast,
-    showSuccess: (message: string, duration?: number) => addToast(message, 'success', duration, '✓'),
-    showCelebration: (message: string, duration?: number) => addToast(message, 'celebration', duration, '🎉'),
-    showEncouragement: (message: string, duration?: number) => addToast(message, 'encouragement', duration, '⭐'),
+    showSuccess: (message: string, duration?: number) => addToast(message, 'success', duration),
+    showCelebration: (message: string, duration?: number) => addToast(message, 'celebration', duration),
+    showEncouragement: (message: string, duration?: number) => addToast(message, 'encouragement', duration),
   }
 }

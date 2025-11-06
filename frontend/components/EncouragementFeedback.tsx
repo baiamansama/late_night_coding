@@ -13,7 +13,7 @@ export default function EncouragementFeedback({ progress, isComplete }: Encourag
 
   useEffect(() => {
     if (isComplete) {
-      setMessage("🎉 Amazing! You finished the story!")
+      setMessage("Amazing! You finished the story!")
       setShowMessage(true)
       // Celebrate with vibration
       if ('vibrate' in navigator) {
@@ -24,18 +24,18 @@ export default function EncouragementFeedback({ progress, isComplete }: Encourag
 
     // Show encouraging messages at milestones
     if (progress === 25) {
-      setMessage("Great start! Keep going! 🌟")
+      setMessage("Great start! Keep going!")
       setShowMessage(true)
       setTimeout(() => setShowMessage(false), 3000)
     } else if (progress === 50) {
-      setMessage("You're halfway there! Awesome! 🚀")
+      setMessage("You're halfway there! Awesome!")
       setShowMessage(true)
       setTimeout(() => setShowMessage(false), 3000)
       if ('vibrate' in navigator) {
         navigator.vibrate(100)
       }
     } else if (progress === 75) {
-      setMessage("Almost done! You're doing great! ⭐")
+      setMessage("Almost done! You're doing great!")
       setShowMessage(true)
       setTimeout(() => setShowMessage(false), 3000)
     }

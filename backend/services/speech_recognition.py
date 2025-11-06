@@ -42,23 +42,23 @@ class SpeechRecognizer:
 
     async def recognize_from_buffer(self, audio_data: bytes) -> Optional[str]:
         """
-        Recognize speech from audio buffer.
+        Recognize speech from audio buffer (supports WebM format via GStreamer).
 
         Args:
-            audio_data: Raw audio data (16kHz, 16-bit, mono)
+            audio_data: Audio data (WebM, WAV, or raw PCM)
 
         Returns:
             Recognized text or None
         """
+        print(f"🎙️ [Azure] Processing audio buffer of {len(audio_data)} bytes")
         try:
-            # Create audio stream from buffer
+            # Use compressed stream format to handle WebM from browser
+            # This tells Azure to use GStreamer to decode WebM to PCM
             audio_format = speechsdk.audio.AudioStreamFormat(
-                samples_per_second=16000,
-                bits_per_sample=16,
-                channels=1
+                compressed_stream_format=speechsdk.AudioStreamContainerFormat.ANY
             )
 
-            # Create push stream
+            # Create push stream with compressed format support
             push_stream = speechsdk.audio.PushAudioInputStream(audio_format)
             push_stream.write(audio_data)
             push_stream.close()
@@ -76,21 +76,26 @@ class SpeechRecognizer:
             result = recognizer.recognize_once()
 
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-                return result.text.strip()
+                recognized_text = result.text.strip()
+                print(f"✅ [Azure] Recognized: '{recognized_text}'")
+                return recognized_text
             elif result.reason == speechsdk.ResultReason.NoMatch:
-                print(f"No speech recognized: {result.no_match_details}")
+                print(f"❓ [Azure] No speech recognized")
+                if hasattr(result, 'no_match_details'):
+                    print(f"   Details: {result.no_match_details}")
                 return None
             elif result.reason == speechsdk.ResultReason.Canceled:
                 cancellation = result.cancellation_details
-                print(f"Recognition canceled: {cancellation.reason}")
+                print(f"❌ [Azure] Recognition canceled: {cancellation.reason}")
                 if cancellation.reason == speechsdk.CancellationReason.Error:
-                    print(f"Error details: {cancellation.error_details}")
+                    print(f"   ❌ Error details: {cancellation.error_details}")
+                    print(f"   ❌ This might mean Azure credentials are invalid or expired")
                 return None
 
             return None
 
         except Exception as e:
-            print(f"Error in speech recognition: {e}")
+            print(f"❌ [Azure] Error in speech recognition: {e}")
             return None
 
     async def recognize_continuous(self, audio_stream, callback):

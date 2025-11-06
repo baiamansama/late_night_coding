@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { Star, Trophy, Sparkles, Award, BookOpen, Brain, Zap } from 'lucide-react'
 
 export default function ResultsPage() {
   const params = useParams()
@@ -33,35 +34,35 @@ export default function ResultsPage() {
   const getMessage = () => {
     if (percentage >= 90) {
       return {
-        emoji: '🌟',
+        icon: Star,
         title: 'Outstanding!',
         message: 'You really understood the story!',
         color: 'from-yellow-400 to-orange-400'
       }
     } else if (percentage >= 80) {
       return {
-        emoji: '🎉',
+        icon: Trophy,
         title: 'Excellent Work!',
         message: 'You did a great job!',
         color: 'from-green-400 to-blue-400'
       }
     } else if (percentage >= 70) {
       return {
-        emoji: '👏',
+        icon: Award,
         title: 'Good Job!',
         message: 'You understood most of the story!',
         color: 'from-blue-400 to-purple-400'
       }
     } else if (percentage >= 60) {
       return {
-        emoji: '💪',
+        icon: Zap,
         title: 'Nice Try!',
         message: 'Keep practicing, you\'re improving!',
         color: 'from-purple-400 to-pink-400'
       }
     } else {
       return {
-        emoji: '🌱',
+        icon: Sparkles,
         title: 'Keep Going!',
         message: 'Every story you read makes you better!',
         color: 'from-pink-400 to-red-400'
@@ -70,35 +71,16 @@ export default function ResultsPage() {
   }
 
   const result = getMessage()
+  const IconComponent = result.icon
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-4xl">
-      {/* Confetti animation */}
-      {showConfetti && (
-        <div className="fixed inset-0 pointer-events-none z-50">
-          {[...Array(50)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute animate-ping"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 2}s`,
-                fontSize: '2rem'
-              }}
-            >
-              {['🎉', '⭐', '🌟', '✨', '🎊'][Math.floor(Math.random() * 5)]}
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="text-center space-y-8">
         {/* Main Result Card */}
         <div className={`bg-gradient-to-br ${result.color} rounded-3xl shadow-2xl p-12 text-white relative overflow-hidden`}>
           <div className="relative z-10">
-            <div className="text-9xl mb-6 animate-bounce">
-              {result.emoji}
+            <div className="flex justify-center mb-6 animate-bounce">
+              <IconComponent className="w-32 h-32" />
             </div>
             <h1 className="text-6xl font-bold mb-4">
               {result.title}
@@ -158,31 +140,39 @@ export default function ResultsPage() {
 
         {/* Achievements */}
         <div className="bg-white rounded-3xl shadow-xl p-8">
-          <h2 className="text-3xl font-bold text-gray-800 mb-6">
-            Achievements Unlocked! 🏆
+          <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center justify-center gap-3">
+            Achievements Unlocked! <Trophy className="w-8 h-8 text-yellow-600" />
           </h2>
           <div className="grid grid-cols-2 gap-4">
             {score >= 1 && (
               <div className="p-4 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-2xl">
-                <div className="text-4xl mb-2">📚</div>
+                <div className="flex justify-center mb-2">
+                  <BookOpen className="w-12 h-12 text-yellow-700" />
+                </div>
                 <div className="font-semibold">Story Reader</div>
               </div>
             )}
             {score >= 3 && (
               <div className="p-4 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl">
-                <div className="text-4xl mb-2">🧠</div>
+                <div className="flex justify-center mb-2">
+                  <Brain className="w-12 h-12 text-blue-700" />
+                </div>
                 <div className="font-semibold">Quick Thinker</div>
               </div>
             )}
             {score >= 4 && (
               <div className="p-4 bg-gradient-to-br from-purple-100 to-purple-200 rounded-2xl">
-                <div className="text-4xl mb-2">⭐</div>
+                <div className="flex justify-center mb-2">
+                  <Star className="w-12 h-12 text-purple-700" />
+                </div>
                 <div className="font-semibold">Super Reader</div>
               </div>
             )}
             {score === total && (
               <div className="p-4 bg-gradient-to-br from-green-100 to-green-200 rounded-2xl">
-                <div className="text-4xl mb-2">🏆</div>
+                <div className="flex justify-center mb-2">
+                  <Trophy className="w-12 h-12 text-green-700" />
+                </div>
                 <div className="font-semibold">Perfect Score!</div>
               </div>
             )}

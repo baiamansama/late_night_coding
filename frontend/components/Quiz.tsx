@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { QUIZ_MESSAGES, getRandomMessage } from '@/lib/encouragement'
+import { Check, X, Brain, Award } from 'lucide-react'
 
 interface QuizQuestion {
   question: string
@@ -133,10 +135,10 @@ export default function Quiz({ questions, onComplete }: QuizProps) {
                   </span>
                   <span>{option}</span>
                   {showFeedback && isCorrectAnswer && (
-                    <span className="ml-auto text-3xl">✓</span>
+                    <Check className="ml-auto w-8 h-8 text-green-600" />
                   )}
                   {showFeedback && isSelected && !isCorrect && (
-                    <span className="ml-auto text-3xl">✗</span>
+                    <X className="ml-auto w-8 h-8 text-red-600" />
                   )}
                 </div>
               </button>
@@ -149,11 +151,21 @@ export default function Quiz({ questions, onComplete }: QuizProps) {
           <div className={`mt-8 p-6 rounded-2xl ${
             isCorrect ? 'bg-green-100' : 'bg-blue-100'
           }`}>
-            <p className={`text-2xl font-bold mb-2 ${
+            <div className={`flex items-center gap-3 text-2xl font-bold mb-2 ${
               isCorrect ? 'text-green-700' : 'text-blue-700'
             }`}>
-              {isCorrect ? '🎉 Correct!' : '💡 Not quite!'}
-            </p>
+              {isCorrect ? (
+                <>
+                  <Brain className="w-6 h-6" />
+                  <span>{getRandomMessage(QUIZ_MESSAGES.correct)}</span>
+                </>
+              ) : (
+                <>
+                  <Brain className="w-6 h-6" />
+                  <span>Not quite! But you're learning!</span>
+                </>
+              )}
+            </div>
             {currentQ.explanation && (
               <p className="text-xl text-gray-700">
                 {currentQ.explanation}

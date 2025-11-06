@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { Brain } from 'lucide-react'
 import Quiz from '@/components/Quiz'
 
 // Sample reading texts (same as reading page)
@@ -112,7 +113,9 @@ export default function QuizPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="text-6xl mb-4 animate-bounce">🧠</div>
+          <div className="flex justify-center mb-4 animate-bounce">
+            <Brain className="w-24 h-24 text-purple-600" />
+          </div>
           <div className="text-4xl font-bold text-gray-700">
             Creating your quiz...
           </div>

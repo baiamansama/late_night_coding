@@ -1,6 +1,26 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #4F46E5;
+  --color-secondary: #10B981;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-warm-bg: #F8F7F5;
+  --color-text-primary: #2C2C2C;
+  --color-calm-blue: #E3F2FD;
+  --color-calm-green: #E8F5E9;
+
+  --font-family-lexend: var(--font-lexend), sans-serif;
+  --font-family-open-sans: var(--font-open-sans), sans-serif;
+  --font-family-poppins: var(--font-poppins), sans-serif;
+
+  --font-size-reading: 1.875rem;
+  --font-size-reading-lg: 2.25rem;
+
+  --letter-spacing-accessible: 0.12em;
+  --letter-spacing-dyslexia: 0.2em;
+}
 
 :root {
   --primary: #4F46E5;

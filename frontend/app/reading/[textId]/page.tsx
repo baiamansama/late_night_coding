@@ -2,12 +2,19 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { Volume2, VolumeX, PartyPopper } from 'lucide-react'
 import AudioRecorder from '@/components/AudioRecorder'
 import TextDisplay from '@/components/TextDisplay'
 import EncouragementFeedback from '@/components/EncouragementFeedback'
 import Toast, { useToast } from '@/components/Toast'
 import AccessibilitySettings from '@/components/AccessibilitySettings'
-import { getMilestoneMessage, getStreakMessage, getWordMessage } from '@/lib/encouragement'
+import {
+  getMilestoneMessage,
+  getStreakMessage,
+  getWordMessage,
+  getPowerUpMessage,
+  getEasterEggMessage
+} from '@/lib/encouragement'
 import { getSoundEffects } from '@/lib/sounds'
 
 // Sample reading texts
@@ -83,16 +90,28 @@ export default function ReadingPage() {
     const newStreak = correctStreak + 1
     setCorrectStreak(newStreak)
 
+    // Check for easter egg (5% chance - rare!)
+    const easterEgg = getEasterEggMessage()
+    if (easterEgg) {
+      showCelebration(easterEgg, 5000)
+    }
+
+    // Check for power-up message (10% chance)
+    const powerUp = getPowerUpMessage()
+    if (powerUp) {
+      showEncouragement(powerUp, 2500)
+    }
+
     // Show word recognition message (every 5 words)
     const wordMsg = getWordMessage(newStreak)
-    if (wordMsg) {
+    if (wordMsg && !easterEgg && !powerUp) { // Don't show if we have special messages
       showSuccess(wordMsg, 2000)
     }
 
-    // Show streak message
+    // Show streak message (priority over other messages)
     const streakMsg = getStreakMessage(newStreak)
     if (streakMsg) {
-      showEncouragement(streakMsg, 3000)
+      showCelebration(streakMsg, 4000) // Longer duration for streaks
       if (soundEnabled) {
         soundEffects.current.playMilestone()
       }
@@ -109,7 +128,7 @@ export default function ReadingPage() {
     }
 
     // Show completion message
-    showCelebration("🎉 Amazing! You finished the story!", 5000)
+    showCelebration("Amazing! You finished the story!", 5000)
 
     // Navigate to quiz after 4 seconds
     setTimeout(() => {
@@ -171,7 +190,7 @@ export default function ReadingPage() {
               }`}
               title={soundEnabled ? 'Mute sounds' : 'Enable sounds'}
             >
-              {soundEnabled ? '🔊' : '🔇'}
+              {soundEnabled ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
             </button>
             <AccessibilitySettings />
           </div>
@@ -210,7 +229,9 @@ export default function ReadingPage() {
 
         {isComplete && (
           <div className="text-center p-8 bg-gradient-to-r from-green-400 to-blue-500 rounded-3xl text-white shadow-2xl">
-            <div className="text-6xl mb-4">🎉</div>
+            <div className="flex justify-center mb-4">
+              <PartyPopper className="w-16 h-16" />
+            </div>
             <h2 className="text-4xl font-bold mb-4">Fantastic Job!</h2>
             <p className="text-2xl">
               Get ready for some fun questions about the story...

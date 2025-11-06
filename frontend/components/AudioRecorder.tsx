@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { Mic, Pause } from 'lucide-react'
 
 interface AudioRecorderProps {
   onTranscript: (word: string, index: number) => void
@@ -53,10 +54,17 @@ export default function AudioRecorder({
       // Create audio context (for future audio processing)
       audioContextRef.current = new AudioContext({ sampleRate: 16000 })
 
-      // Create media recorder
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      })
+      // Create media recorder with PCM codec (raw audio) for Azure
+      // Try PCM first (uncompressed), fall back to Opus if not supported
+      let mimeType = 'audio/webm;codecs=pcm'
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        console.warn('⚠️ PCM not supported, falling back to Opus (may cause issues with Azure)')
+        mimeType = 'audio/webm;codecs=opus'
+      } else {
+        console.log('✅ Using PCM audio format (required by Azure)')
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType })
       mediaRecorderRef.current = mediaRecorder
 
       // Connect to WebSocket (backend will be on port 8000)
@@ -64,7 +72,8 @@ export default function AudioRecorder({
       wsRef.current = ws
 
       ws.onopen = () => {
-        console.log('WebSocket connected')
+        console.log('✅ WebSocket connected')
+        console.log('📤 Sending expected words:', expectedWords.slice(0, 5), '...')
         // Send expected words to backend
         ws.send(JSON.stringify({
           type: 'start',
@@ -73,11 +82,14 @@ export default function AudioRecorder({
       }
 
       ws.onmessage = (event) => {
+        console.log('📨 Message from backend:', event.data)
         const data = JSON.parse(event.data)
 
-        if (data.type === 'word_recognized') {
+        if (data.type === 'ready') {
+          console.log('✅ Backend ready to receive audio')
+        } else if (data.type === 'word_recognized') {
           // Word was recognized
-          console.log('Word recognized:', data.word, 'at index:', data.index)
+          console.log('🎯 Word recognized:', data.word, 'at index:', data.index, 'confidence:', data.confidence)
           onTranscript(data.word, data.index)
           currentWordIndexRef.current = data.index + 1
 
@@ -92,8 +104,10 @@ export default function AudioRecorder({
             stopRecording()
           }
         } else if (data.type === 'error') {
-          console.error('Recognition error:', data.message)
+          console.error('❌ Recognition error:', data.message)
           setError(data.message)
+        } else {
+          console.log('❓ Unknown message type:', data.type, data)
         }
       }
 
@@ -107,8 +121,11 @@ export default function AudioRecorder({
       }
 
       // Send audio chunks to backend
+      let chunkCount = 0
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+          chunkCount++
+          console.log(`🎤 Sending audio chunk #${chunkCount}, size: ${event.data.size} bytes`)
           event.data.arrayBuffer().then(buffer => {
             ws.send(buffer)
           })
@@ -116,6 +133,7 @@ export default function AudioRecorder({
       }
 
       mediaRecorder.start(250) // Send chunks every 250ms for real-time processing
+      console.log('🎙️ MediaRecorder started, will send chunks every 250ms')
       setIsRecording(true)
 
     } catch (err) {
@@ -163,13 +181,13 @@ export default function AudioRecorder({
     <div className="text-center space-y-4">
       <button
         onClick={toggleRecording}
-        className={`w-32 h-32 rounded-full flex items-center justify-center text-6xl transition-all duration-300 ${
+        className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 ${
           isRecording
-            ? 'bg-red-500 hover:bg-red-600 shadow-lg shadow-red-300 animate-pulse'
-            : 'bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-300 hover:scale-110'
+            ? 'bg-red-500 hover:bg-red-600 shadow-lg shadow-red-300 animate-pulse text-white'
+            : 'bg-purple-500 hover:bg-purple-600 shadow-lg shadow-purple-300 hover:scale-110 text-white'
         }`}
       >
-        {isRecording ? '⏸️' : '🎤'}
+        {isRecording ? <Pause className="w-16 h-16" /> : <Mic className="w-16 h-16" />}
       </button>
 
       <p className="text-2xl font-semibold text-gray-700">
