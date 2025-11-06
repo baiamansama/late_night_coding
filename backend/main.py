@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from services.speech_recognition import SpeechRecognizer
+from services.speech_stream import AzureStreamingSession
 from services.word_matcher import WordMatcher
 from services.quiz_generator import QuizGenerator
 
@@ -38,12 +38,8 @@ else:
     if not azure_region:
         print("   - AZURE_SPEECH_REGION is not set")
 
-speech_recognizer = SpeechRecognizer(
-    subscription_key=azure_key,
-    region=azure_region
-)
 word_matcher = WordMatcher(
-    threshold=float(os.getenv("WORD_MATCH_THRESHOLD", "0.40"))
+    threshold=float(os.getenv("WORD_MATCH_THRESHOLD", "0.70"))
 )
 print(f"📊 Word matching threshold: {word_matcher.threshold}")
 
@@ -103,120 +99,113 @@ async def websocket_recognize(websocket: WebSocket):
     await websocket.accept()
     print(f"✅ WebSocket connection accepted from {websocket.client}")
 
+    # Per-connection state
     expected_words: List[str] = []
     current_index = 0
-    audio_buffer = bytearray()
+    session: AzureStreamingSession | None = None
+    loop = asyncio.get_event_loop()
 
-    # Process audio after a small amount of buffered audio to reduce latency
-    # ~12KB ≈ ~375ms of 16kHz/16-bit/mono PCM (plus WAV header)
-    audio_process_bytes = int(os.getenv("AUDIO_PROCESS_BYTES", "12000"))
+    # Helper to send JSON safely
+    async def send_json(obj):
+        try:
+            await websocket.send_json(obj)
+        except Exception as e:
+            print(f"⚠️ Error sending JSON: {e}")
+
+    # Azure callbacks: map recognized text into word-by-word matches
+    async def on_partial(text: str):
+        """Called by Azure when it recognizes speech (INSTANT!)"""
+        nonlocal current_index
+        if not expected_words:
+            return
+
+        print(f"🎙️ [Partial] Azure recognized: '{text}'")
+        tokens = text.lower().split()
+
+        for token in tokens:
+            if current_index >= len(expected_words):
+                return
+
+            # Clean token (remove punctuation)
+            token_clean = ''.join(c for c in token if c.isalnum() or c == "'")
+            if not token_clean:
+                continue
+
+            expected_word = expected_words[current_index].lower()
+            is_match, confidence = word_matcher.match(expected_word, token_clean)
+
+            print(f"🎯 Matching '{expected_word}' vs '{token_clean}': Match={is_match}, Confidence={confidence:.2f}")
+
+            if is_match:
+                print(f"✅ Word matched! Sending recognition for word #{current_index}")
+                await send_json({
+                    "type": "word_recognized",
+                    "word": token_clean,
+                    "expected": expected_word,
+                    "index": current_index,
+                    "confidence": confidence,
+                    "partial": True
+                })
+                current_index += 1
+
+    async def on_final(text: str):
+        """Called by Azure when it completes a phrase"""
+        print(f"✅ [Final] Azure recognized: '{text}'")
+        # Process same way as partial (words turn green immediately from partial anyway)
+        await on_partial(text)
 
     try:
         while True:
-            # Receive message
-            try:
-                message = await websocket.receive()
-            except WebSocketDisconnect:
-                break
+            message = await websocket.receive()
 
-            # Handle text messages (control messages)
+            # Handle text messages (control)
             if "text" in message:
-                data = json.loads(message["text"])
-                print(f"📨 Received text message: {data.get('type', 'unknown')}")
+                data = json.loads(message["text"]) if message.get("text") else {}
+                msg_type = data.get("type")
 
-                if data.get("type") == "start":
-                    expected_words = data.get("expectedWords", [])
+                if msg_type == "start":
+                    expected_words = [w for w in data.get("expectedWords", []) if isinstance(w, str)]
                     current_index = 0
-                    audio_buffer.clear()
                     print(f"📚 Expected words count: {len(expected_words)}")
                     print(f"📝 First 5 words: {expected_words[:5]}")
-                    await websocket.send_json({
-                        "type": "ready",
-                        "message": "Ready to receive audio"
-                    })
 
-                elif data.get("type") == "stop":
+                    # (Re)create streaming session
+                    if session:
+                        session.stop()
+                        session = None
+
+                    session = AzureStreamingSession(
+                        azure_key,
+                        azure_region,
+                        loop=loop,
+                        on_partial=on_partial,
+                        on_final=on_final,
+                    )
+                    await send_json({"type": "ready", "message": "Ready to receive PCM16 audio"})
+
+                elif msg_type == "stop":
                     print("🛑 Stop message received")
+                    if session:
+                        session.stop()
+                        session = None
+                    await send_json({"type": "stopped"})
                     break
 
-            # Handle binary messages (audio data)
+            # Handle binary messages (raw PCM16 audio from AudioWorklet)
             elif "bytes" in message:
-                audio_data = message["bytes"]
-                audio_buffer.extend(audio_data)
-                print(f"🎤 Received audio chunk, buffer size: {len(audio_buffer)} bytes")
-
-                # Process audio when buffer reaches a certain size
-                # Target quicker feedback by processing at ~12KB (configurable)
-                if len(audio_buffer) >= audio_process_bytes:
-                    print(f"🔊 Processing audio buffer of {len(audio_buffer)} bytes...")
-                    try:
-                        # Recognize speech from audio buffer
-                        recognized_text = await speech_recognizer.recognize_from_buffer(
-                            bytes(audio_buffer)
-                        )
-                        print(f"🗣️ Azure recognized: '{recognized_text}'")
-
-                        if recognized_text and current_index < len(expected_words):
-                            # Split recognized text into words
-                            recognized_words = recognized_text.lower().split()
-                            print(f"📝 Recognized words: {recognized_words}")
-                            print(f"📍 Current index: {current_index}, Expected word: '{expected_words[current_index] if current_index < len(expected_words) else 'N/A'}'")
-
-                            # Try to match words
-                            for recognized_word in recognized_words:
-                                if current_index >= len(expected_words):
-                                    break
-
-                                expected_word = expected_words[current_index].lower()
-
-                                # Use fuzzy matching
-                                is_match, confidence = word_matcher.match(
-                                    expected_word,
-                                    recognized_word
-                                )
-                                print(f"🎯 Matching '{expected_word}' vs '{recognized_word}': Match={is_match}, Confidence={confidence:.2f}")
-
-                                if is_match:
-                                    # Send success response
-                                    print(f"✅ Word matched! Sending recognition for word #{current_index}")
-                                    await websocket.send_json({
-                                        "type": "word_recognized",
-                                        "word": recognized_word,
-                                        "expected": expected_word,
-                                        "index": current_index,
-                                        "confidence": confidence
-                                    })
-                                    current_index += 1
-                                else:
-                                    print(f"❌ Word didn't match (confidence {confidence:.2f} < threshold {word_matcher.threshold})")
-                        elif recognized_text:
-                            print(f"⚠️ Recognized text but current_index ({current_index}) >= word count ({len(expected_words)})")
-                        else:
-                            print("❓ No text recognized from audio")
-
-                        # Clear processed audio so next chunk starts fresh
-                        audio_buffer.clear()
-                        print("🧹 Audio buffer cleared")
-
-                    except Exception as e:
-                        print(f"❌ Error processing audio: {e}")
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": str(e)
-                        })
-                        audio_buffer.clear()
+                # Push raw PCM16 into Azure stream (continuous recognition!)
+                if session:
+                    session.push_pcm16(message["bytes"])
 
     except WebSocketDisconnect:
-        pass
+        print("📡 WebSocket disconnected")
     except Exception as e:
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Server error: {str(e)}"
-            })
-        except:
-            pass
+        print(f"❌ Error: {e}")
+        await send_json({"type": "error", "message": str(e)})
     finally:
+        # Cleanup
+        if session:
+            session.stop()
         try:
             await websocket.close()
         except:

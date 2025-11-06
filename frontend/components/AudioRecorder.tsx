@@ -11,6 +11,18 @@ interface AudioRecorderProps {
   setIsRecording: (recording: boolean) => void
 }
 
+function makeWsUrl(path: string) {
+  // Prefer env (e.g., NEXT_PUBLIC_API_URL=https://api.example.com)
+  const base = process.env.NEXT_PUBLIC_API_URL
+  if (base) return base.replace(/^http/, 'ws') + path
+
+  // Derive from current origin; swap port 3000 -> 8000 for local dev
+  const { protocol, hostname, port } = window.location
+  const wsScheme = protocol === 'https:' ? 'wss:' : 'ws:'
+  const finalPort = port === '3000' ? '8000' : port
+  return `${wsScheme}//${hostname}${finalPort ? ':' + finalPort : ''}${path}`
+}
+
 export default function AudioRecorder({
   onTranscript,
   onComplete,
@@ -20,158 +32,153 @@ export default function AudioRecorder({
 }: AudioRecorderProps) {
   const [isSupported, setIsSupported] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const recorderRef = useRef<any>(null)
+
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const currentWordIndexRef = useRef(0)
 
+  // Stop on unmount / tab close
   useEffect(() => {
-    // Check browser support
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const ok =
+      typeof window !== 'undefined' &&
+      'AudioWorkletNode' in window &&
+      navigator.mediaDevices?.getUserMedia
+
+    if (!ok) {
       setIsSupported(false)
-      setError('Your browser does not support audio recording')
+      setError('Your browser does not support low-latency audio recording.')
     }
 
+    const cleanup = () => stopRecording()
+    window.addEventListener('pagehide', cleanup)
+    window.addEventListener('beforeunload', cleanup)
     return () => {
+      window.removeEventListener('pagehide', cleanup)
+      window.removeEventListener('beforeunload', cleanup)
       stopRecording()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const startRecording = async () => {
+  async function startRecording() {
     try {
       setError(null)
       currentWordIndexRef.current = 0
 
-      // Request microphone access
+      // 1) Mic
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
+          channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
-          sampleRate: 16000
+          autoGainControl: true
         }
       })
       streamRef.current = stream
 
-      // Connect to WebSocket (backend will be on port 8000)
-      const ws = new WebSocket('ws://localhost:8000/ws/recognize')
+      // 2) WS
+      const ws = new WebSocket(makeWsUrl('/ws/recognize'))
       wsRef.current = ws
 
       ws.onopen = () => {
-        console.log('✅ WebSocket connected')
-        console.log('📤 Sending expected words:', expectedWords.slice(0, 5), '...')
-        // Send expected words to backend
-        ws.send(JSON.stringify({
-          type: 'start',
-          expectedWords: expectedWords
-        }))
+        ws.send(JSON.stringify({ type: 'start', expectedWords }))
       }
 
       ws.onmessage = (event) => {
-        console.log('📨 Message from backend:', event.data)
-        const data = JSON.parse(event.data)
-
-        if (data.type === 'ready') {
-          console.log('✅ Backend ready to receive audio')
-        } else if (data.type === 'word_recognized') {
-          // Word was recognized
-          console.log('🎯 Word recognized:', data.word, 'at index:', data.index, 'confidence:', data.confidence)
-          onTranscript(data.word, data.index)
-          currentWordIndexRef.current = data.index + 1
-
-          // Vibrate for success (Android only)
-          if ('vibrate' in navigator) {
-            navigator.vibrate(50)
+        try {
+          const data = JSON.parse(event.data)
+          if (data.type === 'ready') {
+            // ready to receive PCM16 frames
+          } else if (data.type === 'word_recognized') {
+            onTranscript(data.word, data.index)
+            currentWordIndexRef.current = data.index + 1
+            if ('vibrate' in navigator) navigator.vibrate(40)
+            if (data.index >= expectedWords.length - 1) {
+              onComplete()
+              stopRecording()
+            }
+          } else if (data.type === 'error') {
+            setError(data.message || 'Recognition error')
           }
-
-          // Check if reading is complete
-          if (data.index >= expectedWords.length - 1) {
-            onComplete()
-            stopRecording()
-          }
-        } else if (data.type === 'error') {
-          console.error('❌ Recognition error:', data.message)
-          setError(data.message)
-        } else {
-          console.log('❓ Unknown message type:', data.type, data)
+        } catch {
+          // ignore non-JSON (shouldn't happen here)
         }
       }
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        setError('Connection error. Please check if the backend is running.')
+      ws.onerror = () => {
+        setError('WebSocket error. Is the backend running?')
       }
 
       ws.onclose = () => {
-        console.log('WebSocket closed')
+        setIsRecording(false)
       }
 
-      // Dynamically import RecordRTC (client-side only)
-      const RecordRTC = (await import('recordrtc')).default
-      const { StereoAudioRecorder } = await import('recordrtc')
+      // 3) AudioContext + Worklet
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioContextRef.current = ctx
+      await ctx.audioWorklet.addModule('/worklets/pcm16-encoder.js')
 
-      // Create RecordRTC instance with WAV format
-      let chunkCount = 0
-      const recorder = RecordRTC(stream, {
-        type: 'audio',
-        mimeType: 'audio/wav',
-        recorderType: StereoAudioRecorder,
-        numberOfAudioChannels: 1, // mono
-        desiredSampRate: 16000, // 16kHz for Azure
-        timeSlice: 250, // Send smaller chunks every 250ms for faster feedback
-        ondataavailable: (blob: Blob) => {
-          if (ws.readyState === WebSocket.OPEN) {
-            chunkCount++
-            console.log(`🎤 Sending WAV chunk #${chunkCount}, size: ${blob.size} bytes`)
-            // Convert blob to ArrayBuffer and send
-            blob.arrayBuffer().then(buffer => {
-              ws.send(buffer)
-            })
-          }
-        }
+      // Force resume (iOS/Safari)
+      if (ctx.state === 'suspended') await ctx.resume()
+
+      const src = ctx.createMediaStreamSource(stream)
+
+      // Request zero outputs; pass a small frame size to keep messages tight
+      const node = new AudioWorkletNode(ctx, 'pcm16-encoder', {
+        numberOfInputs: 1,
+        numberOfOutputs: 0,
+        processorOptions: { frameSamples: 320 } // ~20ms @16k
       })
+      workletNodeRef.current = node
 
-      recorderRef.current = recorder
-      recorder.startRecording()
-      console.log('🎙️ RecordRTC started, sending WAV chunks every 250ms')
+      // Send PCM16 frames; drop if WS buffer is getting large to avoid latency build-up
+      node.port.onmessage = (e) => {
+        const buf = e.data as ArrayBuffer
+        const sock = wsRef.current
+        if (!sock || sock.readyState !== WebSocket.OPEN) return
+        if (sock.bufferedAmount > 512 * 1024) return // drop when >512KB queued
+        sock.send(buf)
+      }
+
+      src.connect(node)
       setIsRecording(true)
-
     } catch (err) {
-      console.error('Error starting recording:', err)
+      console.error(err)
       setError('Could not access microphone. Please grant permission.')
       setIsRecording(false)
     }
   }
 
-  const stopRecording = () => {
-    if (recorderRef.current) {
-      recorderRef.current.stopRecording()
-      recorderRef.current = null
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
+  function stopRecording() {
+    try {
+      workletNodeRef.current?.disconnect()
+      workletNodeRef.current = null
+      audioContextRef.current?.close()
+      audioContextRef.current = null
+      streamRef.current?.getTracks().forEach((t) => t.stop())
       streamRef.current = null
-    }
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'stop' }))
-      wsRef.current.close()
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'stop' }))
+        ws.close()
+      }
+      wsRef.current = null
+    } finally {
+      setIsRecording(false)
     }
-
-    setIsRecording(false)
   }
 
-  const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording()
-    } else {
-      startRecording()
-    }
+  function toggleRecording() {
+    if (isRecording) stopRecording()
+    else startRecording()
   }
 
   if (!isSupported) {
     return (
-      <div className="text-center p-6 bg-red-100 rounded-3xl">
+      <div className="text-center p-6 rounded-3xl bg-red-100">
         <p className="text-red-700 text-xl">{error}</p>
       </div>
     )
