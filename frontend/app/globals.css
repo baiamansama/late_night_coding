@@ -6,9 +6,10 @@
   --color-success: #22C55E;
   --color-warning: #F59E0B;
   --color-danger: #EF4444;
-  --color-warm-bg: #F8F7F5;
+  --color-warm-bg: oklch(97% 0.02 85);
+  --color-calm-blue: oklch(72% 0.12 250);
+  --color-brand: oklch(70% 0.18 250);
   --color-text-primary: #2C2C2C;
-  --color-calm-blue: #E3F2FD;
   --color-calm-green: #E8F5E9;
 
   --font-family-lexend: var(--font-lexend), sans-serif;
@@ -43,10 +44,16 @@ body {
 }
 
 /* Dyslexia-friendly mode */
+.dyslexia-friendly {
+  letter-spacing: 0.06em;
+  word-spacing: 0.16em;
+  line-height: 1.75;
+}
+
 body.dyslexia-friendly {
-  letter-spacing: 0.15em;
-  word-spacing: 0.2em;
-  line-height: 1.8;
+  letter-spacing: 0.06em;
+  word-spacing: 0.16em;
+  line-height: 1.75;
 }
 
 /* Reduced motion for accessibility */
@@ -69,6 +76,12 @@ body.dyslexia-friendly {
   font-weight: 500;
   max-width: 75ch; /* Optimal line length */
   margin: 0 auto;
+  font-variant-ligatures: none;
+}
+
+/* Optional: if you want a quick "Lexend" alias without next/font */
+.font-lexend {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Ubuntu, Cantarell, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
 /* Dyslexia mode for reading text */

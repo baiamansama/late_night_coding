@@ -63,12 +63,23 @@ export const STREAK_MESSAGES = {
 
 export const QUIZ_MESSAGES = {
   correct: [
+    "Brilliant thinking!",
+    "You nailed it! 🎯",
+    "Excellent choice!",
+    "Spot on! 🌟",
+    "High five! 🙌",
     "BIG BRAIN ENERGY!",
     "Correct! Your brain is flexing",
     "Nailed it! IQ +10",
     "CORRECT! You're too smart for this",
     "YES! Reading comprehension: LEGENDARY",
     "Boom! Your brain = supercomputer",
+  ],
+  encouragement: [
+    "You're getting better every time!",
+    "Keep going—you're learning fast!",
+    "Great try! Let's tackle the next one!",
+    "So close! You've got this!",
   ],
   complete: [
     "Quiz destroyed! Your brain is unstoppable!",
