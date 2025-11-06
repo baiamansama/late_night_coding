@@ -5,8 +5,8 @@ Configured for children's voices with lenient recognition.
 
 import azure.cognitiveservices.speech as speechsdk
 from typing import Optional
+import struct
 import asyncio
-import io
 
 
 class SpeechRecognizer:
@@ -33,34 +33,76 @@ class SpeechRecognizer:
         # Set recognition language to English (US)
         self.speech_config.speech_recognition_language = "en-US"
 
-        # Configure for better children's voice recognition
-        # Enable continuous recognition
+        # Silence/segmentation tuning
+        # - Keep segmentation silence around default (~650ms) to avoid hallucinations.
+        # - Allow a bit more initial silence before timing out for short chunks.
         self.speech_config.set_property(
             speechsdk.PropertyId.Speech_SegmentationSilenceTimeoutMs,
-            "500"  # Shorter silence timeout for kids
+            "650"
         )
+        self.speech_config.set_property(
+            speechsdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs,
+            "2000"
+        )
+
+    def _strip_wav_header(self, audio_data: bytes) -> bytes:
+        """
+        Return PCM payload by removing the WAV container header if present.
+
+        Azure PushAudioInputStream expects headerless audio buffers.
+        If the buffer does not look like a WAV file, return it unchanged.
+        """
+        try:
+            if len(audio_data) < 12:
+                return audio_data
+            # RIFF .... WAVE
+            if audio_data[0:4] != b"RIFF" or audio_data[8:12] != b"WAVE":
+                return audio_data
+
+            # Iterate chunks to find 'data'
+            offset = 12
+            while offset + 8 <= len(audio_data):
+                chunk_id = audio_data[offset:offset+4]
+                chunk_size = struct.unpack('<I', audio_data[offset+4:offset+8])[0]
+                offset += 8
+                if chunk_id == b"data":
+                    # Return data payload from here
+                    end = min(offset + chunk_size, len(audio_data))
+                    return audio_data[offset:end]
+                # Chunks are word aligned
+                offset += chunk_size + (chunk_size % 2)
+            # Fallback: typical PCM WAV header is 44 bytes
+            return audio_data[44:] if len(audio_data) > 44 else b""
+        except Exception:
+            # On any parsing issue, fall back to raw buffer
+            return audio_data
 
     async def recognize_from_buffer(self, audio_data: bytes) -> Optional[str]:
         """
-        Recognize speech from audio buffer (supports WebM format via GStreamer).
+        Recognize speech from audio buffer (WAV format from RecordRTC).
 
         Args:
-            audio_data: Audio data (WebM, WAV, or raw PCM)
+            audio_data: Complete WAV audio chunk from RecordRTC
 
         Returns:
             Recognized text or None
         """
-        print(f"🎙️ [Azure] Processing audio buffer of {len(audio_data)} bytes")
+        print(f"🎙️ [Azure] Processing WAV audio of {len(audio_data)} bytes")
         try:
-            # Use compressed stream format to handle WebM from browser
-            # This tells Azure to use GStreamer to decode WebM to PCM
+            # Create audio format for raw PCM (16kHz, 16-bit, mono)
             audio_format = speechsdk.audio.AudioStreamFormat(
-                compressed_stream_format=speechsdk.AudioStreamContainerFormat.ANY
+                samples_per_second=16000,
+                bits_per_sample=16,
+                channels=1
             )
 
-            # Create push stream with compressed format support
+            # Remove WAV header; Azure push streams must be headerless
+            pcm_payload = self._strip_wav_header(audio_data)
+
+            # Create push stream and write PCM frames only
             push_stream = speechsdk.audio.PushAudioInputStream(audio_format)
-            push_stream.write(audio_data)
+            if pcm_payload:
+                push_stream.write(pcm_payload)
             push_stream.close()
 
             # Create audio config from stream

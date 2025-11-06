@@ -20,8 +20,8 @@ export default function AudioRecorder({
 }: AudioRecorderProps) {
   const [isSupported, setIsSupported] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
+  const recorderRef = useRef<any>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const currentWordIndexRef = useRef(0)
 
@@ -50,22 +50,7 @@ export default function AudioRecorder({
           sampleRate: 16000
         }
       })
-
-      // Create audio context (for future audio processing)
-      audioContextRef.current = new AudioContext({ sampleRate: 16000 })
-
-      // Create media recorder with PCM codec (raw audio) for Azure
-      // Try PCM first (uncompressed), fall back to Opus if not supported
-      let mimeType = 'audio/webm;codecs=pcm'
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        console.warn('⚠️ PCM not supported, falling back to Opus (may cause issues with Azure)')
-        mimeType = 'audio/webm;codecs=opus'
-      } else {
-        console.log('✅ Using PCM audio format (required by Azure)')
-      }
-
-      const mediaRecorder = new MediaRecorder(stream, { mimeType })
-      mediaRecorderRef.current = mediaRecorder
+      streamRef.current = stream
 
       // Connect to WebSocket (backend will be on port 8000)
       const ws = new WebSocket('ws://localhost:8000/ws/recognize')
@@ -120,20 +105,34 @@ export default function AudioRecorder({
         console.log('WebSocket closed')
       }
 
-      // Send audio chunks to backend
-      let chunkCount = 0
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-          chunkCount++
-          console.log(`🎤 Sending audio chunk #${chunkCount}, size: ${event.data.size} bytes`)
-          event.data.arrayBuffer().then(buffer => {
-            ws.send(buffer)
-          })
-        }
-      }
+      // Dynamically import RecordRTC (client-side only)
+      const RecordRTC = (await import('recordrtc')).default
+      const { StereoAudioRecorder } = await import('recordrtc')
 
-      mediaRecorder.start(250) // Send chunks every 250ms for real-time processing
-      console.log('🎙️ MediaRecorder started, will send chunks every 250ms')
+      // Create RecordRTC instance with WAV format
+      let chunkCount = 0
+      const recorder = RecordRTC(stream, {
+        type: 'audio',
+        mimeType: 'audio/wav',
+        recorderType: StereoAudioRecorder,
+        numberOfAudioChannels: 1, // mono
+        desiredSampRate: 16000, // 16kHz for Azure
+        timeSlice: 250, // Send smaller chunks every 250ms for faster feedback
+        ondataavailable: (blob: Blob) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            chunkCount++
+            console.log(`🎤 Sending WAV chunk #${chunkCount}, size: ${blob.size} bytes`)
+            // Convert blob to ArrayBuffer and send
+            blob.arrayBuffer().then(buffer => {
+              ws.send(buffer)
+            })
+          }
+        }
+      })
+
+      recorderRef.current = recorder
+      recorder.startRecording()
+      console.log('🎙️ RecordRTC started, sending WAV chunks every 250ms')
       setIsRecording(true)
 
     } catch (err) {
@@ -144,13 +143,14 @@ export default function AudioRecorder({
   }
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
+    if (recorderRef.current) {
+      recorderRef.current.stopRecording()
+      recorderRef.current = null
     }
 
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
     }
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {

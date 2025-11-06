@@ -7,11 +7,11 @@ import asyncio
 import os
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from services.speech_recognition import SpeechRecognizer
 from services.word_matcher import WordMatcher
 from services.quiz_generator import QuizGenerator
-
-load_dotenv()
 
 app = FastAPI(title="Kids Reading Recognition API")
 
@@ -43,7 +43,7 @@ speech_recognizer = SpeechRecognizer(
     region=azure_region
 )
 word_matcher = WordMatcher(
-    threshold=float(os.getenv("WORD_MATCH_THRESHOLD", "0.70"))
+    threshold=float(os.getenv("WORD_MATCH_THRESHOLD", "0.40"))
 )
 print(f"📊 Word matching threshold: {word_matcher.threshold}")
 
@@ -107,6 +107,10 @@ async def websocket_recognize(websocket: WebSocket):
     current_index = 0
     audio_buffer = bytearray()
 
+    # Process audio after a small amount of buffered audio to reduce latency
+    # ~12KB ≈ ~375ms of 16kHz/16-bit/mono PCM (plus WAV header)
+    audio_process_bytes = int(os.getenv("AUDIO_PROCESS_BYTES", "12000"))
+
     try:
         while True:
             # Receive message
@@ -142,8 +146,8 @@ async def websocket_recognize(websocket: WebSocket):
                 print(f"🎤 Received audio chunk, buffer size: {len(audio_buffer)} bytes")
 
                 # Process audio when buffer reaches a certain size
-                # Note: WebM chunks are variable size, process every ~10 chunks or 20KB
-                if len(audio_buffer) >= 20000:
+                # Target quicker feedback by processing at ~12KB (configurable)
+                if len(audio_buffer) >= audio_process_bytes:
                     print(f"🔊 Processing audio buffer of {len(audio_buffer)} bytes...")
                     try:
                         # Recognize speech from audio buffer
@@ -190,7 +194,7 @@ async def websocket_recognize(websocket: WebSocket):
                         else:
                             print("❓ No text recognized from audio")
 
-                        # Clear processed audio
+                        # Clear processed audio so next chunk starts fresh
                         audio_buffer.clear()
                         print("🧹 Audio buffer cleared")
 
